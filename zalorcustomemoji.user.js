@@ -488,6 +488,9 @@
 			}
 		});
 		
+		buttonContainer.appendChild(cancelButton);
+		buttonContainer.appendChild(confirmButton);
+		
 		popup.appendChild(title);
 		popup.appendChild(inputContainer);
 		popup.appendChild(previewContainer);
