@@ -5,7 +5,7 @@ zalỏ custom reaction userscript
 ## How to use????
 
 1. Install NodeJS
-2. Run "npm install -g asar"
+2. Run "npm install -g asar" in cmd ( or PowerShell if you prefer )
 3. Run the latest script from release
 4. Let it take care of the rest and Enjoy!
 
