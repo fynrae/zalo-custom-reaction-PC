@@ -2,14 +2,12 @@ zalỏ custom reaction userscript
 
 [about zalo custom reaction](https://web.facebook.com/share/p/1V5uSkRncu/)
 
-## HDSD
+## How to use????
 
-1. Cài một trong hai trình chạy userscript:
-
-    - <a href="https://violentmonkey.github.io/get-it/" target="_blank" rel="noopener noreferrer">Violentmonkey</a>
-    - <a href="https://www.tampermonkey.net/" target="_blank" rel="noopener noreferrer">Tampermonkey</a>
-2. nhấn vào <a href="https://github.com/anhwaivo/zalo-custom-reaction-userscript/raw/refs/heads/main/zalorcustomemoji.user.js" target="_blank" rel="noopener noreferrer">đây</a> để cài
-3. done
+1. Install NodeJS
+2. Run "npm install -g asar"
+3. Run the latest script from release
+4. Let it take care of the rest and Enjoy!
 
 ## Contributors
 
