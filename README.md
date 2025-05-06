@@ -1,4 +1,4 @@
-zalỏ custom reaction userscript
+zalỏ PC custom reaction userscript
 
 [about zalo custom reaction](https://web.facebook.com/share/p/1V5uSkRncu/)
 
