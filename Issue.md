@@ -6,4 +6,5 @@ This error also occurs when Zalo just updated, happened to me on 25.5.3.
 ### Fix
 The only way to fix this problem is to reinstall Zalo with the lastest version, then run the script again and it should work with no problem.
 # Report issue
-To report any issue that you encountered, please reach out to me!
+To report any issue that you encountered, please report the issue to
+[zalo-custom-reaction-PC-issue-tracker](https://github.com/fynrae/zalo-custom-reaction-PC-issue-tracker)!
