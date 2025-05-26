@@ -30,6 +30,10 @@ CUSTOM_SCRIPT_FILENAME = "zalorcustomemoji.user.js"
 TARGET_HTML_FILENAME = "index.html"
 TARGET_HTML_SUBDIR = "pc-dist"
 INJECTION_MARKER = "</body>"
+# --- MODIFIED CONSTANTS for file/folder replacement strategy ---
+ORIGINAL_ASAR_FILENAME = "app.asar"
+BACKUP_ASAR_FILENAME = "app.asar.bak"
+UNPACKED_DIR_NAME = "unpacked_temp" # Temporary name for the folder created by extract_asar
 
 def get_asar_executable() -> Optional[str]:
     """Finds the asar executable, checking common locations and PATH."""
@@ -108,8 +112,9 @@ def extract_asar(asar_path: Path, extract_to: Path) -> bool:
         print(f"{COLOR_ERROR}[!] Error: Input ASAR file not found: {COLOR_HIGHLIGHT}{asar_path}{Style.RESET_ALL}")
         return False
 
+    # If extract_to (the temporary unpacked folder) exists, remove it
     if extract_to.exists():
-        print(f"{COLOR_INFO}[*] Removing existing extraction directory: {COLOR_HIGHLIGHT}{extract_to}{Style.RESET_ALL}")
+        print(f"{COLOR_INFO}[*] Removing existing temporary extraction directory: {COLOR_HIGHLIGHT}{extract_to}{Style.RESET_ALL}")
         try:
             shutil.rmtree(extract_to)
             time.sleep(0.5)
@@ -138,7 +143,6 @@ def extract_asar(asar_path: Path, extract_to: Path) -> bool:
     except subprocess.CalledProcessError as e:
         print(f"{COLOR_ERROR}[!] Extraction failed (code {e.returncode}):")
         print(f"{COLOR_ERROR}    Command: {' '.join(e.cmd)}")
-        # Use Fore.RED for stderr, maybe default for stdout if needed
         print(f"{Fore.RED}    Stderr: {e.stderr.strip() if e.stderr else 'N/A'}")
         print(f"    Stdout: {e.stdout.strip() if e.stdout else 'N/A'}")
         return False
@@ -149,56 +153,9 @@ def extract_asar(asar_path: Path, extract_to: Path) -> bool:
         print(f"{COLOR_ERROR}[!] Unexpected error during extraction: {e}")
         return False
 
-def repack_asar(source_dir: Path, output_asar_path: Path) -> bool:
-    """
-    Repacks a directory into an ASAR archive, overwriting the output file.
-    Returns True on success, False on failure.
-    """
-    asar_executable = get_asar_executable()
-    if not asar_executable or not shutil.which(asar_executable):
-         print(f"{COLOR_ERROR}[!] Error: Could not find or verify 'asar' executable ('{asar_executable}') for repacking.")
-         return False
-
-    print(f"{COLOR_INFO}[*] Using asar executable: {Style.BRIGHT}{asar_executable}{Style.NORMAL}")
-
-    if not source_dir.is_dir():
-        print(f"{COLOR_ERROR}[!] Error: Source directory for repacking not found: {COLOR_HIGHLIGHT}{source_dir}{Style.RESET_ALL}")
-        print(f"{COLOR_ERROR}    Extraction might have failed earlier.")
-        return False
-
-    if output_asar_path.exists():
-        print(f"{COLOR_INFO}[*] Removing existing target ASAR file: {COLOR_HIGHLIGHT}{output_asar_path}{Style.RESET_ALL}")
-        try:
-            output_asar_path.unlink()
-            time.sleep(0.2)
-        except OSError as e:
-            print(f"{COLOR_WARNING}[!] Warning: Could not remove existing {COLOR_HIGHLIGHT}{output_asar_path}{Style.RESET_ALL}: {e}")
-            print(f"{COLOR_WARNING}    This might be okay if 'asar pack' can overwrite.")
-            print(f"{COLOR_WARNING}    Ensure Zalo is not running if repacking fails.")
-
-    print(f"{COLOR_INFO}[*] Repacking {COLOR_HIGHLIGHT}{source_dir}{COLOR_INFO} to {COLOR_HIGHLIGHT}{output_asar_path}{Style.RESET_ALL}")
-    command = [asar_executable, 'pack', str(source_dir), str(output_asar_path)]
-    print(f"{COLOR_INFO}[*] Running command: {' '.join(command)}")
-
-    try:
-        result = subprocess.run(
-            command, check=True, capture_output=True, text=True, encoding='utf-8'
-        )
-        print(f"{COLOR_SUCCESS}[+] Repacking complete!")
-        return True
-    except subprocess.CalledProcessError as e:
-        print(f"{COLOR_ERROR}[!] Repacking failed (code {e.returncode}):")
-        print(f"{COLOR_ERROR}    Command: {' '.join(e.cmd)}")
-        print(f"{Fore.RED}    Stderr: {e.stderr.strip() if e.stderr else 'N/A'}")
-        print(f"    Stdout: {e.stdout.strip() if e.stdout else 'N/A'}")
-        print(f"{COLOR_ERROR}[!] Ensure Zalo application is completely closed (check Task Manager).")
-        return False
-    except FileNotFoundError:
-        print(f"{COLOR_ERROR}[!] Error: Could not execute '{asar_executable}'. Path issue?")
-        return False
-    except Exception as e:
-        print(f"{COLOR_ERROR}[!] Unexpected error during repacking: {e}")
-        return False
+# --- REPACK_ASAR FUNCTION IS NO LONGER NEEDED AND WILL BE REMOVED/COMMENTED ---
+# def repack_asar(source_dir: Path, output_asar_path: Path) -> bool:
+#     ... (original repack_asar code) ...
 
 def download_file(url: str, destination_path: Path) -> bool:
     """Downloads a file from a URL and saves it. Returns True on success."""
@@ -216,7 +173,9 @@ def download_file(url: str, destination_path: Path) -> bool:
     except requests.exceptions.RequestException as e:
         print(f"{COLOR_ERROR}[!] Error downloading file: {e}")
         if destination_path.exists():
-            try: destination_path.unlink()
+            try: destination_path.unlink(missing_ok=True) # Python 3.8+
+            except AttributeError: # For Python < 3.8
+                if destination_path.exists(): destination_path.unlink()
             except OSError: pass
         return False
     except OSError as e:
@@ -284,12 +243,11 @@ def inject_script_to_html(html_path: Path, script_src: str, marker: str) -> bool
         return False
 
 def find_latest_zalo() -> None:
-    """Finds the latest installed Zalo version, extracts its app.asar,
-       downloads a custom script, injects it into index.html, repacks the asar,
-       and cleans up."""
+    """Finds Zalo, extracts app.asar, modifies it, then replaces original app.asar
+       with the modified unpacked folder, keeping a backup of the original file."""
     print(f"{COLOR_IMPORTANT}[!] Important: Please ensure the Zalo application is completely closed before running this script.")
-    print(f"{COLOR_IMPORTANT}    Check Task Manager for any running Zalo processes.")
-    time.sleep(3) # Give user more time to read
+    print(f"{COLOR_IMPORTANT}    Check Task Manager for any running Zalo processes (Zalo.exe, ZaloApp.exe, etc.).")
+    time.sleep(3)
 
     try:
         base_path = get_zalo_base_path()
@@ -312,7 +270,6 @@ def find_latest_zalo() -> None:
             version = parse_version(entry.name)
             if version:
                 found_folders.append((version, entry))
-                # Use a slightly dimmer color for found folders unless it's the latest? Or just keep info
                 print(f"{COLOR_INFO}    - Found potential version folder: {entry.name} ({version})")
 
     if not found_folders:
@@ -325,36 +282,66 @@ def find_latest_zalo() -> None:
 
     version_str = '.'.join(map(str, latest_version))
     resources_folder = latest_folder / 'resources'
-    asar_path = resources_folder / 'app.asar'
-    unpacked_folder = resources_folder / 'unpacked'
+    # --- Paths for the new strategy ---
+    original_asar_path = resources_folder / ORIGINAL_ASAR_FILENAME  # e.g., .../resources/app.asar
+    backup_asar_path = resources_folder / BACKUP_ASAR_FILENAME      # e.g., .../resources/app.asar.bak
+    unpacked_temp_dir = resources_folder / UNPACKED_DIR_NAME        # e.g., .../resources/unpacked_temp
+    # This will be the final name of our modified folder, replacing the original asar file
+    target_asar_folder_path = resources_folder / ORIGINAL_ASAR_FILENAME # e.g., .../resources/app.asar (as a folder)
 
-    print(Style.BRIGHT + "-" * 30 + Style.RESET_ALL) # Separator
+
+    print(Style.BRIGHT + "-" * 30 + Style.RESET_ALL)
     print(f"{COLOR_SUCCESS}[+] Found latest Zalo folder: {COLOR_HIGHLIGHT}{latest_folder}{Style.RESET_ALL}")
     print(f"{COLOR_SUCCESS}[+] Latest Version: {Style.BRIGHT}{version_str}{Style.NORMAL}")
     print(f"{COLOR_INFO}[*] Resources folder: {COLOR_HIGHLIGHT}{resources_folder}{Style.RESET_ALL}")
-    print(f"{COLOR_INFO}[*] Target ASAR path: {COLOR_HIGHLIGHT}{asar_path}{Style.RESET_ALL}")
-    print(f"{COLOR_INFO}[*] Temporary extraction path: {COLOR_HIGHLIGHT}{unpacked_folder}{Style.RESET_ALL}")
+    print(f"{COLOR_INFO}[*] Original ASAR target: {COLOR_HIGHLIGHT}{original_asar_path}{Style.RESET_ALL}") # Will be file or dir
+    print(f"{COLOR_INFO}[*] Temporary extraction path (if needed): {COLOR_HIGHLIGHT}{unpacked_temp_dir}{Style.RESET_ALL}")
 
-    if not asar_path.is_file():
-        print(f"{COLOR_ERROR}[!] Error: app.asar not found at the expected location: {COLOR_HIGHLIGHT}{asar_path}{Style.RESET_ALL}")
+    # --- Determine current state of app.asar (file or directory) ---
+    is_asar_already_a_directory = False
+    if original_asar_path.is_dir():
+        # Check if it looks like a valid unpacked app.asar directory
+        if (original_asar_path / TARGET_HTML_SUBDIR / TARGET_HTML_FILENAME).exists():
+            print(f"{COLOR_WARNING}[!] '{ORIGINAL_ASAR_FILENAME}' is already a directory. Script might have run before.")
+            print(f"{COLOR_WARNING}    Attempting to inject script directly into this existing directory.")
+            # Set unpacked_temp_dir to the existing directory to proceed with injection
+            unpacked_temp_dir = original_asar_path # Work directly on the existing dir
+            is_asar_already_a_directory = True
+        else:
+            print(f"{COLOR_ERROR}[!] Error: '{ORIGINAL_ASAR_FILENAME}' is a directory, but not a valid unpacked structure.")
+            print(f"{COLOR_ERROR}    Location: {COLOR_HIGHLIGHT}{original_asar_path}{Style.RESET_ALL}")
+            if backup_asar_path.exists():
+                print(f"{COLOR_INFO}    A backup file '{BACKUP_ASAR_FILENAME}' exists. You might want to restore it manually.")
+            return
+    elif not original_asar_path.is_file():
+        print(f"{COLOR_ERROR}[!] Error: '{ORIGINAL_ASAR_FILENAME}' not found as a file or a valid directory.")
+        print(f"{COLOR_ERROR}    Location: {COLOR_HIGHLIGHT}{original_asar_path}{Style.RESET_ALL}")
+        if backup_asar_path.exists():
+            print(f"{COLOR_INFO}    A backup file '{BACKUP_ASAR_FILENAME}' exists. You might want to restore it manually.")
         return
 
-    # --- Step 1: Extract ASAR ---
-    print(f"\n{COLOR_STEP}--- Step 1: Extracting ASAR ---{Style.RESET_ALL}")
-    if not extract_asar(asar_path, unpacked_folder):
-        print(f"{COLOR_ERROR}[!] Aborting due to ASAR extraction failure.")
-        return
+    # --- Step 1: Extract ASAR (if it's a file) ---
+    if not is_asar_already_a_directory: # Only extract if app.asar is currently a file
+        print(f"\n{COLOR_STEP}--- Step 1: Extracting ASAR file ---{Style.RESET_ALL}")
+        if not extract_asar(original_asar_path, unpacked_temp_dir): # Extract to unpacked_temp_dir
+            print(f"{COLOR_ERROR}[!] Aborting due to ASAR extraction failure.")
+            return
+    else:
+        print(f"\n{COLOR_STEP}--- Step 1: Skipped (ASAR is already a directory) ---{Style.RESET_ALL}")
+
 
     # --- Step 2: Download Custom Script ---
     print(f"\n{COLOR_STEP}--- Step 2: Downloading Custom Script ---{Style.RESET_ALL}")
-    script_destination_dir = unpacked_folder / TARGET_HTML_SUBDIR
+    # Script destination is inside the (potentially temporarily named) unpacked folder
+    script_destination_dir = unpacked_temp_dir / TARGET_HTML_SUBDIR
     custom_script_path = script_destination_dir / CUSTOM_SCRIPT_FILENAME
 
     if not download_file(CUSTOM_SCRIPT_URL, custom_script_path):
         print(f"{COLOR_ERROR}[!] Aborting due to script download failure.")
-        if unpacked_folder.exists():
-             print(f"{COLOR_INFO}[*] Cleaning up temporary directory: {COLOR_HIGHLIGHT}{unpacked_folder}{Style.RESET_ALL}")
-             shutil.rmtree(unpacked_folder, ignore_errors=True)
+        # Only clean up unpacked_temp_dir if it was freshly extracted (i.e., not if app.asar was already a dir)
+        if not is_asar_already_a_directory and unpacked_temp_dir.exists():
+             print(f"{COLOR_INFO}[*] Cleaning up temporary extraction directory: {COLOR_HIGHLIGHT}{unpacked_temp_dir}{Style.RESET_ALL}")
+             shutil.rmtree(unpacked_temp_dir, ignore_errors=True)
         return
 
     # --- Step 3: Inject Script into HTML ---
@@ -365,38 +352,94 @@ def find_latest_zalo() -> None:
     injection_successful = inject_script_to_html(html_path, script_relative_src, INJECTION_MARKER)
     if not injection_successful:
         print(f"{COLOR_ERROR}[!] Script injection failed.")
-        print(f"{COLOR_ERROR}[!] Aborting before repacking.")
-        if unpacked_folder.exists():
-             print(f"{COLOR_INFO}[*] Cleaning up temporary directory: {COLOR_HIGHLIGHT}{unpacked_folder}{Style.RESET_ALL}")
-             shutil.rmtree(unpacked_folder, ignore_errors=True)
+        print(f"{COLOR_ERROR}[!] Aborting before modifying ASAR file/folder structure.")
+        if not is_asar_already_a_directory and unpacked_temp_dir.exists():
+             print(f"{COLOR_INFO}[*] Cleaning up temporary extraction directory: {COLOR_HIGHLIGHT}{unpacked_temp_dir}{Style.RESET_ALL}")
+             shutil.rmtree(unpacked_temp_dir, ignore_errors=True)
         return
 
-    # --- Step 4: Repack ASAR ---
-    print(f"\n{COLOR_STEP}--- Step 4: Repacking modified files into ASAR ---{Style.RESET_ALL}")
-    repack_successful = repack_asar(unpacked_folder, asar_path)
-    if not repack_successful:
-        print(f"{COLOR_ERROR}[!] Repacking failed. The original app.asar might still be in place or corrupted.")
-        print(f"{COLOR_WARNING}    The unpacked files are kept in case you need to inspect them:")
-        print(f"{COLOR_HIGHLIGHT}    {unpacked_folder}{Style.RESET_ALL}")
-        return
+    # --- Step 4: Backup original app.asar (file) and rename unpacked folder ---
+    # This step only runs if original_asar_path was initially a file and extraction happened.
+    # If it was already a directory, we just modified it in place.
 
-    # --- Step 5: Cleanup ---
-    print(f"\n{COLOR_STEP}--- Step 5: Cleaning up temporary directory ---{Style.RESET_ALL}")
-    if repack_successful and unpacked_folder.exists():
-        print(f"{COLOR_INFO}[*] Removing temporary directory: {COLOR_HIGHLIGHT}{unpacked_folder}{Style.RESET_ALL}")
+    if not is_asar_already_a_directory:
+        print(f"\n{COLOR_STEP}--- Step 4: Replacing ASAR file with modified folder ---{Style.RESET_ALL}")
+
+        # 4a. Rename original app.asar (file) to app.asar.bak
+        print(f"{COLOR_INFO}[*] Backing up original '{ORIGINAL_ASAR_FILENAME}' (file) to '{BACKUP_ASAR_FILENAME}'...")
         try:
-            shutil.rmtree(unpacked_folder)
-            print(f"{COLOR_SUCCESS}[+] Cleanup complete.")
+            # If backup already exists, remove it first to avoid error on rename
+            if backup_asar_path.exists():
+                print(f"{COLOR_WARNING}    Existing backup '{BACKUP_ASAR_FILENAME}' found. Replacing it.")
+                if backup_asar_path.is_dir(): # Should be a file, but check just in case
+                    shutil.rmtree(backup_asar_path)
+                else:
+                    backup_asar_path.unlink(missing_ok=True) # Python 3.8+
+                time.sleep(0.2)
+            original_asar_path.rename(backup_asar_path)
+            print(f"{COLOR_SUCCESS}[+] Original ASAR file backed up to: {COLOR_HIGHLIGHT}{backup_asar_path}{Style.RESET_ALL}")
         except OSError as e:
-            print(f"{COLOR_WARNING}[!] Warning: Could not remove temporary directory {COLOR_HIGHLIGHT}{unpacked_folder}{Style.RESET_ALL}: {e}")
-            print(f"{COLOR_WARNING}    You may need to remove it manually.")
+            print(f"{COLOR_ERROR}[!] Error backing up original ASAR file: {e}")
+            print(f"{COLOR_ERROR}    Please ensure Zalo is closed and you have permissions.")
+            print(f"{COLOR_ERROR}    Aborting. Modified files are in {COLOR_HIGHLIGHT}{unpacked_temp_dir}{Style.RESET_ALL}")
+            # Attempt to restore original_asar_path if backup failed mid-way (unlikely but cautious)
+            # This is complex as original_asar_path might not exist if rename started
+            return
+
+        # 4b. Rename the unpacked_temp_dir to app.asar (which is target_asar_folder_path)
+        print(f"{COLOR_INFO}[*] Renaming '{UNPACKED_DIR_NAME}' to '{ORIGINAL_ASAR_FILENAME}' (as a folder)...")
+        try:
+            # If target_asar_folder_path (app.asar) somehow exists as a file now (it shouldn't if backup worked), remove it.
+            if target_asar_folder_path.is_file():
+                print(f"{COLOR_WARNING}    '{ORIGINAL_ASAR_FILENAME}' unexpectedly exists as a file before renaming folder. Removing it.")
+                target_asar_folder_path.unlink(missing_ok=True)
+
+            unpacked_temp_dir.rename(target_asar_folder_path)
+            print(f"{COLOR_SUCCESS}[+] Modified folder renamed to: {COLOR_HIGHLIGHT}{target_asar_folder_path}{Style.RESET_ALL}")
+        except OSError as e:
+            print(f"{COLOR_ERROR}[!] Error renaming '{UNPACKED_DIR_NAME}' to '{ORIGINAL_ASAR_FILENAME}': {e}")
+            print(f"{COLOR_ERROR}    The application might be in an inconsistent state.")
+            print(f"{COLOR_INFO}    Original backup: {COLOR_HIGHLIGHT}{backup_asar_path}{Style.RESET_ALL} (SHOULD BE A FILE)")
+            print(f"{COLOR_INFO}    Modified files (not renamed): {COLOR_HIGHLIGHT}{unpacked_temp_dir}{Style.RESET_ALL}")
+            print(f"{COLOR_IMPORTANT}    Attempting to restore backup...")
+            try:
+                if backup_asar_path.is_file(): # Ensure backup is a file
+                    # If target_asar_folder_path exists as a dir (failed rename), remove it
+                    if target_asar_folder_path.is_dir() and target_asar_folder_path.name == ORIGINAL_ASAR_FILENAME:
+                        shutil.rmtree(target_asar_folder_path)
+                    backup_asar_path.rename(original_asar_path)
+                    print(f"{COLOR_SUCCESS}    Successfully restored backup '{BACKUP_ASAR_FILENAME}' to '{ORIGINAL_ASAR_FILENAME}'.")
+                else:
+                    print(f"{COLOR_ERROR}    Backup '{BACKUP_ASAR_FILENAME}' is not a file or doesn't exist. Cannot restore automatically.")
+            except Exception as restore_e:
+                print(f"{COLOR_ERROR}    Automatic restore failed: {restore_e}")
+            print(f"{COLOR_IMPORTANT}    Please manually check the 'resources' folder.")
+            return
+    else: # This means app.asar was already a directory
+        print(f"\n{COLOR_STEP}--- Step 4: Modification Complete (ASAR was already a directory) ---{Style.RESET_ALL}")
+        print(f"{COLOR_INFO}[*] '{ORIGINAL_ASAR_FILENAME}' was already a directory. Modifications applied in place.")
+        # No specific message about backup here as no file was backed up in this run if it was already a dir.
+
+
+    # --- Step 5: Finalizing (No explicit cleanup of unpacked_temp_dir as it became the new app.asar or was the existing app.asar dir) ---
+    print(f"\n{COLOR_STEP}--- Step 5: Finalizing ---{Style.RESET_ALL}")
+    if not is_asar_already_a_directory and backup_asar_path.exists():
+        print(f"{COLOR_INFO}[*] The original '{ORIGINAL_ASAR_FILENAME}' (file) is backed up as '{BACKUP_ASAR_FILENAME}'.")
+    elif is_asar_already_a_directory and backup_asar_path.exists():
+         print(f"{COLOR_INFO}[*] A backup file '{BACKUP_ASAR_FILENAME}' exists from a previous run.")
+    print(f"{COLOR_INFO}[*] The modified content is now at: {COLOR_HIGHLIGHT}{target_asar_folder_path}{Style.RESET_ALL} (as a folder).")
+
 
     # --- Final Success Message ---
-    print(Style.BRIGHT + Fore.RESET + "-" * 30)
+    print(Style.BRIGHT + Fore.RESET + "-" * 30) # Use Fore.RESET to avoid green line
     print(f"{Style.BRIGHT}{Fore.GREEN}[SUCCESS] Script finished successfully!{Style.RESET_ALL}")
-    print(f"{Fore.GREEN}          - Modified and repacked: {COLOR_HIGHLIGHT}{asar_path}{Style.RESET_ALL}")
+    if not is_asar_already_a_directory and backup_asar_path.exists(): # Only show backup message if a backup was made *in this run*
+        print(f"{Fore.GREEN}          - Original '{ORIGINAL_ASAR_FILENAME}' (file) backed up to: {COLOR_HIGHLIGHT}{backup_asar_path}{Style.RESET_ALL}")
+    print(f"{Fore.GREEN}          - Zalo will now load from the modified folder: {COLOR_HIGHLIGHT}{target_asar_folder_path}{Style.RESET_ALL}")
     print(f"\n{Style.BRIGHT}{Fore.YELLOW}          You may need to RESTART Zalo completely for changes to take effect.")
-    print(f"{Style.BRIGHT}{Fore.YELLOW}          (Check Task Manager to ensure no Zalo processes are running before restarting).{Style.RESET_ALL}")
+    print(f"{Style.BRIGHT}{Fore.YELLOW}          (Check Task Manager for Zalo processes).")
+    if backup_asar_path.exists(): # Offer revert instructions if any backup exists
+        print(f"\n{Style.BRIGHT}{Fore.CYAN}          To revert: Delete the '{ORIGINAL_ASAR_FILENAME}' FOLDER, then rename '{BACKUP_ASAR_FILENAME}' back to '{ORIGINAL_ASAR_FILENAME}'.{Style.RESET_ALL}")
 
 
 if __name__ == "__main__":
