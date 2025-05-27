@@ -14,8 +14,8 @@ Installer 1.0.0
 ### Why?
 Well I am not sure why but Zalo can not to send clipboard images when app.asar is modified and repacked.
 ### Fix
-To fix this, instead of unpack, modify and repack app.asar, we're going to unpack and modify directly of the unpacked folder, when done, rename app.asar to something different like app.asar.bak, then rename the unpacked folder to app.asar. This way will fix the issue. \
-Use the newer version (> 1.0.0), in 1.0.1, this fix was been implemented and the issue is gone. \
+To resolve this issue, we no longer unpack, modify, and repack the `app.asar` file. Instead, we unpack it once, make our modifications directly within the unpacked folder, then rename the original `app.asar` to something like `app.asar.bak` as a backup, and finally rename the modified folder to `app.asar`. This simpler method avoids repacking complications and resolves the issue. \
+As of version 1.0.1 and above, this fix has been implemented and the problem is no longer present.
 \
 All credit to [ncdai](https://github.com/ncdai) for the solution !
 # Report issue
